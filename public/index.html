@@ -125,7 +125,30 @@ async function load(){
   }
 }
 
-document.getElementById("reload").onclick = load;
+document.getElementById("reload").onclick = () => load();
+
+/* ===== 자동 갱신 ================================================
+   - 매일 자정(00:01)에 한 번 → '오늘/내일'이 하루씩 넘어감
+   - 낮 동안 혹시 메뉴가 고쳐질 경우를 대비해 3시간마다 한 번
+   - 태블릿이 절전에서 깨어났을 때, 날짜가 바뀌었거나 3시간이 지났으면 한 번
+================================================================ */
+const REFRESH_MS = 3 * 60 * 60 * 1000;   // 3시간
+let lastLoad = 0, lastDay = "";
+const _load = load;
+load = async () => { lastLoad = Date.now(); lastDay = ymd(new Date()); await _load(); };
+
+function scheduleMidnight(){
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1, 0, 1);
+  setTimeout(() => { load(); scheduleMidnight(); }, next - now);
+}
+scheduleMidnight();
+setInterval(() => load(), REFRESH_MS);
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && (ymd(new Date()) !== lastDay || Date.now() - lastLoad > REFRESH_MS)) load();
+});
+
 load();
 </script>
 </body>
