@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>물메초 학사일정</title>
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Jua&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#fdf8ef; --card:#ffffff; --ink:#2b2a27; --muted:#7a756b;
+    --accent:#e8743b; --accent2:#3b8f6b; --line:#efe6d6; --chip:#fff1e3; --off:#d9534f;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#1d1c1a; --card:#2a2826; --ink:#f2eee6; --muted:#a8a194;
+      --accent:#f08a54; --accent2:#5cb38c; --line:#3a3733; --chip:#3a2e24; --off:#e57373; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Gowun Dodum",system-ui,sans-serif}
+  .wrap{max-width:760px;margin:0 auto;padding:28px 16px 40px}
+  h1{font-family:"Jua",sans-serif;font-weight:400;font-size:clamp(26px,6vw,38px);margin:0;text-align:center}
+  h1 span{color:var(--accent)}
+  .nav{display:flex;justify-content:center;align-items:center;gap:14px;margin:16px 0 8px}
+  .nav button{font:inherit;font-size:20px;border:2px solid var(--line);background:var(--card);color:var(--ink);
+    border-radius:12px;width:44px;height:40px;cursor:pointer}
+  .month{font-family:"Jua",sans-serif;font-size:24px;min-width:140px;text-align:center}
+  .filter{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-bottom:16px}
+  .filter button{font:inherit;font-size:14px;border:1.5px solid var(--line);background:var(--card);color:var(--ink);
+    border-radius:99px;padding:4px 12px;cursor:pointer}
+  .filter button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .card{background:var(--card);border:2px solid var(--line);border-radius:20px;padding:6px 18px}
+  .ev{display:grid;grid-template-columns:92px 1fr;gap:10px;padding:12px 0;border-bottom:1px dashed var(--line)}
+  .ev:last-child{border-bottom:0}
+  .d{color:var(--muted);font-size:15px;padding-top:2px}
+  .d.today{color:var(--accent);font-weight:700}
+  .n{font-size:19px}
+  .meta{margin-top:4px;display:flex;flex-wrap:wrap;gap:4px}
+  .tag{font-size:12px;border-radius:99px;padding:1px 8px;background:var(--chip);color:var(--ink)}
+  .tag.off{background:var(--off);color:#fff}
+  .c{font-size:14px;color:var(--muted);margin-top:4px}
+  .empty{padding:24px 0;text-align:center;color:var(--muted)}
+  .err{background:#fde8e8;color:#8a1f1f;border-radius:14px;padding:14px;margin-top:14px;display:none}
+  details{margin-top:18px;color:var(--muted);font-size:13px}
+  pre{white-space:pre-wrap;word-break:break-all;background:var(--card);border:1px solid var(--line);
+    border-radius:10px;padding:10px;max-height:320px;overflow:auto;color:var(--ink)}
+  .sum{text-align:center;color:var(--muted);font-size:14px;margin-bottom:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📅 물메초 <span>학사일정</span></h1>
+  <div class="nav">
+    <button id="prev" aria-label="이전 달">‹</button>
+    <div class="month" id="month"></div>
+    <button id="next" aria-label="다음 달">›</button>
+  </div>
+  <div class="filter" id="filter"></div>
+  <div class="sum" id="sum"></div>
+  <div class="card" id="list"><div class="empty">불러오는 중…</div></div>
+  <div class="err" id="err"></div>
+  <details><summary>원본 데이터 보기 (테스트용)</summary><pre id="raw"></pre></details>
+</div>
+
+<script>
+const WEEK = ["일","월","화","수","목","금","토"];
+const pad = n => String(n).padStart(2,"0");
+const ymd = d => d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate());
+const parseYmd = s => new Date(+s.slice(0,4), +s.slice(4,6)-1, +s.slice(6,8));
+const esc = s => s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+let cur = new Date(); cur.setDate(1);
+let grade = 0;            // 0 = 전체
+let events = [];
+
+// 학년 필터 버튼
+const filterEl = document.getElementById("filter");
+["전체","1학년","2학년","3학년","4학년","5학년","6학년"].forEach((label, i) => {
+  const b = document.createElement("button");
+  b.textContent = label; if (i === 0) b.className = "on";
+  b.onclick = () => { grade = i; [...filterEl.children].forEach((x,j)=>x.className = j===i ? "on" : ""); render(); };
+  filterEl.appendChild(b);
+});
+
+function render(){
+  const list = document.getElementById("list");
+  const shown = grade ? events.filter(e => e.grades.includes(grade) || e.grades.length === 0) : events;
+  document.getElementById("sum").textContent = `${shown.length}건` + (grade ? ` (${grade}학년 + 전체 해당)` : "");
+  if (!shown.length){ list.innerHTML = '<div class="empty">이 달에는 등록된 일정이 없어요</div>'; return; }
+  const today = ymd(new Date());
+  list.innerHTML = shown.map(e => {
+    const d = parseYmd(e.date);
+    const off = e.dayType && e.dayType !== "해당없음";
+    const gradesTxt = e.grades.length === 6 ? "전 학년" : e.grades.length ? e.grades.join("·") + "학년" : "";
+    return `<div class="ev">
+      <div class="d ${e.date===today?"today":""}">${d.getMonth()+1}/${d.getDate()} (${WEEK[d.getDay()]})</div>
+      <div><div class="n">${esc(e.name)}</div>
+        <div class="meta">${off?`<span class="tag off">${esc(e.dayType)}</span>`:""}${gradesTxt?`<span class="tag">${gradesTxt}</span>`:""}</div>
+        ${e.content?`<div class="c">${esc(e.content)}</div>`:""}
+      </div></div>`;
+  }).join("");
+}
+
+async function load(){
+  const err = document.getElementById("err"); err.style.display = "none";
+  document.getElementById("month").textContent = `${cur.getFullYear()}년 ${cur.getMonth()+1}월`;
+  document.getElementById("list").innerHTML = '<div class="empty">불러오는 중…</div>';
+  const from = new Date(cur), to = new Date(cur.getFullYear(), cur.getMonth()+1, 0);
+  try{
+    const res = await fetch(`/api/schedule?from=${ymd(from)}&to=${ymd(to)}`);
+    let data = {}; try{ data = await res.json(); }catch(e){}
+    if (!res.ok) throw new Error(data.error || ("서버 오류 (" + res.status + ")"));
+    events = data.events || [];
+    document.getElementById("raw").textContent = JSON.stringify(events, null, 2);
+    render();
+  }catch(e){
+    events = [];
+    document.getElementById("list").innerHTML = '<div class="empty">—</div>';
+    err.textContent = "⚠️ " + e.message; err.style.display = "block";
+  }
+}
+
+document.getElementById("prev").onclick = () => { cur.setMonth(cur.getMonth()-1); load(); };
+document.getElementById("next").onclick = () => { cur.setMonth(cur.getMonth()+1); load(); };
+load();
+</script>
+</body>
+</html>
